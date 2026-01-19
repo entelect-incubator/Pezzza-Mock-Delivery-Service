@@ -1,0 +1,378 @@
+openapi: 3.0.3
+info:
+  title: Pezzza Mock Delivery API
+  description: |
+    A realistic mock delivery service for training and integration testing.
+    
+    Features:
+    - Realistic status transitions
+    - Webhook callbacks
+    - Idempotency support
+    - Failure simulation
+    - Random delays
+    
+    Perfect for learning enterprise integration patterns.
+  version: 1.0.0
+  contact:
+    name: Pezzza Incubator
+    url: https://github.com/entelect-incubator/Pezzza-Mock-Delivery-Service
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8081/api/v1
+    description: Local development
+  - url: https://mock-delivery.pezzza.com/api/v1
+    description: Production (example)
+
+tags:
+  - name: Deliveries
+    description: Delivery management operations
+
+paths:
+  /deliveries:
+    post:
+      tags:
+        - Deliveries
+      summary: Create a new delivery
+      description: |
+        Creates a new delivery request. Returns immediately with a delivery ID.
+        The delivery will progress through statuses automatically.
+        
+        Supports idempotency via the `idempotencyKey` field.
+      operationId: createDelivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeliveryRequest'
+            examples:
+              basic:
+                summary: Basic delivery request
+                value:
+                  orderId: "order-123"
+                  pickupAddress:
+                    street: "123 Pizza St"
+                    city: "Cape Town"
+                    postalCode: "8001"
+                  deliveryAddress:
+                    street: "456 Customer Ave"
+                    city: "Cape Town"
+                    postalCode: "8002"
+              withWebhook:
+                summary: Delivery with webhook
+                value:
+                  orderId: "order-456"
+                  pickupAddress:
+                    street: "123 Pizza St"
+                    city: "Cape Town"
+                    postalCode: "8001"
+                  deliveryAddress:
+                    street: "789 Customer Blvd"
+                    city: "Cape Town"
+                    postalCode: "8003"
+                  webhookUrl: "https://your-api.com/webhooks/delivery"
+                  idempotencyKey: "unique-key-123"
+      responses:
+        '201':
+          description: Delivery created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDeliveryResponse'
+        '200':
+          description: Existing delivery returned (idempotent request)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDeliveryResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /deliveries/{id}:
+    get:
+      tags:
+        - Deliveries
+      summary: Get delivery status
+      description: Retrieve the current status and details of a delivery
+      operationId: getDelivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Delivery ID
+          schema:
+            type: string
+            example: "abc123def456"
+      responses:
+        '200':
+          description: Delivery details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResponse'
+        '404':
+          description: Delivery not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /deliveries/{id}/cancel:
+    post:
+      tags:
+        - Deliveries
+      summary: Cancel a delivery
+      description: |
+        Cancel an active delivery. Only deliveries in Created, PickedUp, or OnTheWay
+        status can be cancelled.
+      operationId: cancelDelivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Delivery ID
+          schema:
+            type: string
+            example: "abc123def456"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelDeliveryRequest'
+      responses:
+        '200':
+          description: Delivery cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelDeliveryResponse'
+        '400':
+          description: Cannot cancel delivery (already in terminal state)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Delivery not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+components:
+  schemas:
+    CreateDeliveryRequest:
+      type: object
+      required:
+        - orderId
+        - pickupAddress
+        - deliveryAddress
+      properties:
+        orderId:
+          type: string
+          description: Your order ID for reference
+          example: "order-123"
+        pickupAddress:
+          $ref: '#/components/schemas/DeliveryAddress'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddress'
+        idempotencyKey:
+          type: string
+          description: Unique key for idempotent requests
+          example: "unique-key-123"
+        webhookUrl:
+          type: string
+          format: uri
+          description: URL to receive status update webhooks
+          example: "https://your-api.com/webhooks/delivery"
+        forceFail:
+          type: boolean
+          description: Set to true to force this delivery to fail (testing only)
+          default: false
+
+    CreateDeliveryResponse:
+      type: object
+      required:
+        - deliveryId
+        - status
+        - createdAt
+      properties:
+        deliveryId:
+          type: string
+          description: Unique delivery identifier
+          example: "abc123def456"
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-18T14:30:00Z"
+        message:
+          type: string
+          example: "Delivery created successfully"
+
+    DeliveryResponse:
+      type: object
+      required:
+        - deliveryId
+        - orderId
+        - status
+        - createdAt
+      properties:
+        deliveryId:
+          type: string
+          example: "abc123def456"
+        orderId:
+          type: string
+          example: "order-123"
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        createdAt:
+          type: string
+          format: date-time
+        pickedUpAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        driver:
+          $ref: '#/components/schemas/DeliveryDriver'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddress'
+
+    CancelDeliveryRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Reason for cancellation
+          example: "Customer requested cancellation"
+
+    CancelDeliveryResponse:
+      type: object
+      required:
+        - deliveryId
+        - status
+        - cancelledAt
+      properties:
+        deliveryId:
+          type: string
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        cancelledAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    DeliveryAddress:
+      type: object
+      required:
+        - street
+        - city
+        - postalCode
+      properties:
+        street:
+          type: string
+          example: "123 Pizza St"
+        city:
+          type: string
+          example: "Cape Town"
+        postalCode:
+          type: string
+          example: "8001"
+        instructions:
+          type: string
+          nullable: true
+          example: "Ring bell twice"
+
+    DeliveryDriver:
+      type: object
+      required:
+        - name
+        - phone
+        - vehicleNumber
+      properties:
+        name:
+          type: string
+          example: "John Smith"
+        phone:
+          type: string
+          example: "+27 72 123 4567"
+        vehicleNumber:
+          type: string
+          example: "CA 12 AB"
+
+    DeliveryStatus:
+      type: string
+      enum:
+        - Created
+        - PickedUp
+        - OnTheWay
+        - Delivered
+        - Failed
+        - Cancelled
+      description: |
+        Delivery status progression:
+        - Created: Initial state
+        - PickedUp: Driver collected the order
+        - OnTheWay: Driver en route to delivery address
+        - Delivered: Successfully delivered
+        - Failed: Delivery failed
+        - Cancelled: Delivery cancelled
+
+    DeliveryWebhookPayload:
+      type: object
+      required:
+        - deliveryId
+        - orderId
+        - status
+        - timestamp
+      description: Payload sent to webhook URL on status changes
+      properties:
+        deliveryId:
+          type: string
+        orderId:
+          type: string
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        timestamp:
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+          nullable: true
+        driver:
+          $ref: '#/components/schemas/DeliveryDriver'
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
